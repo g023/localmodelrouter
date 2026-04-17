@@ -1,10 +1,10 @@
 # Local Model Router (LMR)
 
-[![Version](https://img.shields.io/badge/version-0.5.1-blue.svg)](https://github.com/g023/localmodelrouter)
+[![Version](https://img.shields.io/badge/version-0.6.0-blue.svg)](https://github.com/g023/localmodelrouter)
 [![Python](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-A full-featured, single-file local LLM server that provides drop-in API compatibility with both Ollama and OpenAI, using [llama.cpp](https://github.com/ggerganov/llama.cpp)'s `llama-server` as the inference backend.
+A full-featured local LLM server that provides drop-in API compatibility with both Ollama and OpenAI, using [llama.cpp](https://github.com/ggerganov/llama.cpp)'s `llama-server` as the inference backend.
 
 ## Table of Contents
 
@@ -38,7 +38,7 @@ LMR leverages the high-performance llama.cpp backend while providing a familiar 
 ## Features
 
 ### Core Capabilities
-- **Single-file deployment** - Everything in one `lmr.py` file (~1500 lines)
+- **Modular package** - Clean `lmr/` package with thin `lmr.py` entry point
 - **Zero dependencies on Ollama** - Pure Python + llama.cpp
 - **Concurrent model serving** - Multiple models loaded simultaneously
 - **Dynamic port allocation** - Automatic port management for llama-server instances
@@ -93,13 +93,37 @@ LMR follows a multi-process architecture:
                 └─────────────────┘   │
 ```
 
+### Project Structure
+
+```
+lmr.py                    # Thin entry point (imports from lmr package)
+lmr/
+  __init__.py             # Package init, version exports
+  __main__.py             # python -m lmr support
+  app.py                  # FastAPI app factory, lifespan, error handlers
+  cli.py                  # CLI argument parsing, main()
+  config.py               # ServerConfig, ModelConfig, constants
+  converters.py           # Format conversion (Ollama ↔ OpenAI ↔ llama-server)
+  models.py               # Pydantic request/response models
+  process.py              # ProcessManager, llama-server lifecycle
+  responses.py            # Response builders (generate, chat, timings)
+  utils.py                # Utility functions (GPU detection, parsing, etc.)
+  routes/
+    __init__.py            # Route registration
+    native.py              # Ollama /api/* endpoints
+    openai_api.py          # OpenAI /v1/* endpoints
+models.json               # Model configuration
+examples/                 # Usage examples
+test_lmr.py               # Test suite
+```
+
 ### Key Components
 
-1. **FastAPI Server** - Main HTTP server handling all API requests
-2. **Process Manager** - Manages llama-server process lifecycle
-3. **Model Registry** - JSON-based configuration of available models
-4. **Request Router** - Translates between Ollama/OpenAI formats and llama-server protocol
-5. **Health Monitor** - Background task checking process health and unloading idle models
+1. **FastAPI Server** (`lmr/app.py`) - Main HTTP server handling all API requests
+2. **Process Manager** (`lmr/process.py`) - Manages llama-server process lifecycle
+3. **Model Registry** (`lmr/config.py`) - JSON-based configuration of available models
+4. **Request Router** (`lmr/routes/`) - Translates between Ollama/OpenAI formats and llama-server protocol
+5. **Health Monitor** (`lmr/process.py`) - Background task checking process health and unloading idle models
 
 ### Data Flow
 
@@ -129,9 +153,9 @@ LMR follows a multi-process architecture:
 ### Install LMR
 
 ```bash
-# Clone or download lmr.py
-wget https://raw.githubusercontent.com/g023/localmodelrouter/main/lmr.py
-chmod +x lmr.py
+# Clone or download lmr
+git clone https://github.com/g023/localmodelrouter.git
+cd localmodelrouter
 
 # Install dependencies
 pip install fastapi uvicorn pydantic requests huggingface_hub aiohttp
