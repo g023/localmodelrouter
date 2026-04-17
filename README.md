@@ -33,7 +33,7 @@ Local Model Router (LMR) is a Python-based server that acts as a bridge between 
 - **GPU acceleration** - Automatic GPU memory detection and optimization
 - **Hugging Face integration** - Direct model downloads from HF Hub
 
-Unlike Ollama which bundles its own inference engine, LMR leverages the high-performance llama.cpp backend while providing a familiar API surface.
+LMR leverages the high-performance llama.cpp backend while providing a familiar API surface.
 
 ## Features
 
