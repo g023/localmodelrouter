@@ -1,10 +1,10 @@
-# Local Model Router (LMR)
+# Local Model Router (LMR) v0.6.0
 
 [![Version](https://img.shields.io/badge/version-0.6.0-blue.svg)](https://github.com/g023/localmodelrouter)
 [![Python](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-A full-featured local LLM server that provides drop-in API compatibility with both Ollama and OpenAI, using [llama.cpp](https://github.com/ggerganov/llama.cpp)'s `llama-server` as the inference backend.
+A high-performance local LLM server providing drop-in API compatibility with Ollama and OpenAI, built on [llama.cpp](https://github.com/ggerganov/llama.cpp)'s `llama-server`. Features automatic VRAM management, Hugging Face integration, and modular architecture.
 
 ## Table of Contents
 
@@ -16,31 +16,31 @@ A full-featured local LLM server that provides drop-in API compatibility with bo
 - [Usage](#usage)
 - [API Reference](#api-reference)
 - [Examples](#examples)
-- [Development](#development)
 - [Troubleshooting](#troubleshooting)
+- [Development](#development)
 - [Contributing](#contributing)
 - [License](#license)
 
 ## Overview
 
-Local Model Router (LMR) is a Python-based server that acts as a bridge between client applications and local Large Language Models (LLMs) running via llama.cpp. It provides:
+Local Model Router (LMR) is a Python-based server that bridges client applications to local Large Language Models running via llama.cpp. It offers:
 
 - **Full Ollama API compatibility** - Drop-in replacement for Ollama server
 - **Complete OpenAI API compatibility** - Works with OpenAI SDK and tools
 - **Multi-model support** - Load and manage multiple models simultaneously
-- **Automatic model lifecycle** - Load on demand, unload when idle
+- **Automatic VRAM management** - LRU eviction and context optimization
+- **Hugging Face integration** - Direct downloads with quantization hints
 - **Streaming responses** - Real-time token streaming for both APIs
 - **GPU acceleration** - Automatic GPU memory detection and optimization
-- **Hugging Face integration** - Direct model downloads from HF Hub
 
-LMR leverages the high-performance llama.cpp backend while providing a familiar API surface.
+Unlike Ollama which bundles its own inference engine, LMR leverages the battle-tested llama.cpp backend while providing familiar APIs.
 
 ## Features
 
 ### Core Capabilities
-- **Modular package** - Clean `lmr/` package with thin `lmr.py` entry point
+- **Modular package architecture** - Clean `lmr/` package with thin `lmr.py` entry point
 - **Zero dependencies on Ollama** - Pure Python + llama.cpp
-- **Concurrent model serving** - Multiple models loaded simultaneously
+- **Concurrent model serving** - Multiple models loaded simultaneously with VRAM management
 - **Dynamic port allocation** - Automatic port management for llama-server instances
 - **Health monitoring** - Automatic process health checks and restarts
 - **Graceful shutdown** - Proper cleanup of all child processes
@@ -53,22 +53,23 @@ LMR leverages the high-performance llama.cpp backend while providing a familiar 
 
 ### Model Management
 - **Flexible model configuration** - JSON-based model registry
-- **Hugging Face integration** - Direct downloads with `hf:` prefix
+- **Hugging Face integration** - Direct downloads with `hf:owner/repo:quant` format (e.g., `hf:g023/Qwen3-1.77B-g023-GGUF:Q8_0`)
 - **Local file support** - Direct paths to GGUF files
 - **Model templating** - Custom chat templates and system prompts
 - **Parameter overrides** - Per-model GPU layers, context size, etc.
 - **Keep-alive control** - Configurable model unloading timeouts
 
 ### Performance & Optimization
-- **GPU memory detection** - Automatic context size estimation
+- **VRAM management** - LRU eviction when memory is insufficient, embedding context capping
+- **GPU memory detection** - Automatic context size estimation based on available VRAM
 - **Parallel processing** - Multiple concurrent requests per model
 - **Flash attention** - Hardware-accelerated attention when available
-- **Context size optimization** - Conservative memory management
+- **Context size optimization** - Conservative memory management with multi-model awareness
 - **Async I/O** - Non-blocking request handling with aiohttp
 
 ## Architecture
 
-LMR follows a multi-process architecture:
+LMR follows a multi-process architecture with automatic resource management:
 
 ```
 ┌─────────────────┐    ┌──────────────────┐
@@ -80,17 +81,17 @@ LMR follows a multi-process architecture:
                        │ │ Manager     │  │
                        └─┼─────────────┼──┘
                          │             │
-                ┌────────▼────────┐   │
-                │ llama-server    │   │
-                │ (Model A)       │   │
-                │ Port 39000      │   │
-                └─────────────────┘   │
-                                      │
-                ┌────────▼────────┐   │
-                │ llama-server    │   │
-                │ (Model B)       │   │
-                │ Port 39001      │   │
-                └─────────────────┘   │
+                ┌────────▼────────┐    │
+                │ llama-server    │    │
+                │ (Model A)       │    │
+                │ Port 39000      │    │
+                └─────────────────┘    │
+                                       │
+                ┌────────▼────────┐    │
+                │ llama-server    │    │
+                │ (Model B)       │    │
+                │ Port 39001      │    │
+                └─────────────────┘    │
 ```
 
 ### Project Structure
@@ -98,29 +99,37 @@ LMR follows a multi-process architecture:
 ```
 lmr.py                    # Thin entry point (imports from lmr package)
 lmr/
-  __init__.py             # Package init, version exports
-  __main__.py             # python -m lmr support
-  app.py                  # FastAPI app factory, lifespan, error handlers
-  cli.py                  # CLI argument parsing, main()
-  config.py               # ServerConfig, ModelConfig, constants
-  converters.py           # Format conversion (Ollama ↔ OpenAI ↔ llama-server)
-  models.py               # Pydantic request/response models
-  process.py              # ProcessManager, llama-server lifecycle
-  responses.py            # Response builders (generate, chat, timings)
-  utils.py                # Utility functions (GPU detection, parsing, etc.)
-  routes/
-    __init__.py            # Route registration
-    native.py              # Ollama /api/* endpoints
-    openai_api.py          # OpenAI /v1/* endpoints
+├── __init__.py           # Package init, version exports (LMR_VERSION="0.6.0")
+├── __main__.py           # python -m lmr support
+├── app.py                # FastAPI app factory, lifespan, error handlers
+├── cli.py                # CLI argument parsing, main()
+├── config.py             # ServerConfig, ModelConfig, constants
+├── converters.py         # Format conversion (Ollama ↔ OpenAI ↔ llama-server)
+├── models.py             # Pydantic request/response models
+├── process.py            # ProcessManager, llama-server lifecycle, VRAM management
+├── responses.py          # Response builders (generate, chat, timings)
+├── utils.py              # Utility functions (GPU detection, parsing, etc.)
+└── routes/
+    ├── __init__.py       # Route registration
+    ├── native.py         # Ollama /api/* endpoints
+    └── openai_api.py     # OpenAI /v1/* endpoints
 models.json               # Model configuration
-examples/                 # Usage examples
-test_lmr.py               # Test suite
+examples/                 # Usage examples (7 scripts)
+├── chat_basic.py         # Basic chat completion
+├── chat_streaming.py     # Streaming chat
+├── openai_sdk.py         # OpenAI SDK usage
+├── model_management.py   # Model CRUD operations
+├── embeddings.py         # Embedding generation
+├── tool_calling.py       # Function calling
+└── multi_model.py        # Multi-model usage
+test_lmr.py               # Test suite (39 tests)
+README.md                 # This file
 ```
 
 ### Key Components
 
 1. **FastAPI Server** (`lmr/app.py`) - Main HTTP server handling all API requests
-2. **Process Manager** (`lmr/process.py`) - Manages llama-server process lifecycle
+2. **Process Manager** (`lmr/process.py`) - Manages llama-server process lifecycle with VRAM management
 3. **Model Registry** (`lmr/config.py`) - JSON-based configuration of available models
 4. **Request Router** (`lmr/routes/`) - Translates between Ollama/OpenAI formats and llama-server protocol
 5. **Health Monitor** (`lmr/process.py`) - Background task checking process health and unloading idle models
@@ -128,16 +137,18 @@ test_lmr.py               # Test suite
 ### Data Flow
 
 1. **Request Reception** - FastAPI receives API call (e.g., `/api/chat`)
-2. **Model Resolution** - Process Manager checks if model is loaded
-3. **Process Launch** - If not loaded, launches llama-server with model
-4. **Request Translation** - Converts Ollama/OpenAI format to llama-server JSON
-5. **Proxying** - Forwards request to appropriate llama-server instance
-6. **Response Translation** - Converts llama-server response back to requested format
-7. **Streaming** - Handles Server-Sent Events for real-time responses
+2. **Model Resolution** - Process Manager checks if model is loaded, downloads from HF if needed
+3. **VRAM Check** - Estimates memory requirements, evicts LRU models if necessary
+4. **Process Launch** - If not loaded, launches llama-server with optimized parameters
+5. **Request Translation** - Converts Ollama/OpenAI format to llama-server JSON
+6. **Proxying** - Forwards request to appropriate llama-server instance
+7. **Response Translation** - Converts llama-server response back to requested format
+8. **Streaming** - Handles Server-Sent Events for real-time responses
 
-### Process Lifecycle
+### Process Lifecycle & VRAM Management
 
-- **Load on Demand** - Models loaded when first requested
+- **Load on Demand** - Models loaded when first requested, with automatic HF downloads
+- **VRAM Management** - LRU eviction when insufficient memory, embedding models capped at 8192 context
 - **Keep-Alive** - Models stay loaded for configurable time after last use
 - **Health Checks** - Periodic verification of process health
 - **Graceful Shutdown** - Proper termination of all child processes on exit
@@ -153,7 +164,7 @@ test_lmr.py               # Test suite
 ### Install LMR
 
 ```bash
-# Clone or download lmr
+# Clone repository
 git clone https://github.com/g023/localmodelrouter.git
 cd localmodelrouter
 
@@ -185,6 +196,8 @@ wget https://huggingface.co/microsoft/WizardLM-2-8x22B-GGUF/resolve/main/WizardL
 
 # Option 2: Use LMR's Hugging Face integration (automatic)
 # Models will be downloaded on first use with hf: prefix
+# Example: "hf:mistralai/Mistral-7B-Instruct-v0.1-GGUF:Q4_K_M"
+# Example: "g023/Qwen3-1.77B-g023-GGUF:Q8_0"
 ```
 
 ## Configuration
@@ -204,9 +217,13 @@ LMR uses a JSON file to define available models. Create `models.json` in the sam
     "extra_flags": {"--flash-attn": true}
   },
   "mistral-7b": {
-    "path": "hf:mistralai/Mistral-7B-Instruct-v0.1-GGUF:mistral-7b-instruct-v0.1.Q4_K_M.gguf",
+    "path": "hf:mistralai/Mistral-7B-Instruct-v0.1-GGUF:Q4_K_M",
     "ctx_size": 8192,
     "system": "You are a helpful assistant."
+  },
+  "qwen-embedding": {
+    "path": "Qwen/Qwen3-Embedding-0.6B-GGUF:Q8_0",
+    "ctx_size": 8192
   }
 }
 ```
@@ -215,9 +232,9 @@ LMR uses a JSON file to define available models. Create `models.json` in the sam
 
 | Field | Type | Description | Default |
 |-------|------|-------------|---------|
-| `path` | string | Path to GGUF file or `hf:owner/repo:filename` for HF download | Required |
+| `path` | string | Path to GGUF file or `hf:owner/repo:quant` for HF download | Required |
 | `num_gpu` | int | GPU layers (-1 = auto, 0 = CPU only) | -1 |
-| `ctx_size` | int | Context size in tokens (0 = auto) | 0 |
+| `ctx_size` | int | Context size in tokens (0 = auto, capped at 8192 for embeddings) | 0 |
 | `num_parallel` | int | Parallel processing slots | 4 |
 | `extra_flags` | object | Additional llama-server flags | {} |
 | `template` | string | Chat template override | "" |
@@ -292,7 +309,7 @@ client = OpenAI(
 )
 
 response = client.chat.completions.create(
-    model="llama3.2-3b",
+    model="g023/Qwen3-1.77B-g023-GGUF:Q8_0",
     messages=[{"role": "user", "content": "Hello!"}]
 )
 
@@ -303,22 +320,22 @@ print(response.choices[0].message.content)
 
 ```bash
 # Show model details
-curl -X POST http://localhost:11434/api/show -d '{"model": "llama3.2-3b"}'
+curl -X POST http://localhost:11434/api/show -d '{"model": "g023/Qwen3-1.77B-g023-GGUF:Q8_0"}'
 
 # Create a new model variant
 curl -X POST http://localhost:11434/api/create \
   -d '{
     "model": "llama3.2-3b-custom",
-    "from": "llama3.2-3b",
+    "from": "g023/Qwen3-1.77B-g023-GGUF:Q8_0",
     "system": "You are a helpful coding assistant."
   }'
 
 # Copy a model
 curl -X POST http://localhost:11434/api/copy \
-  -d '{"source": "llama3.2-3b", "destination": "llama3.2-3b-backup"}'
+  -d '{"source": "g023/Qwen3-1.77B-g023-GGUF:Q8_0", "destination": "turbo-g023-backup"}'
 
 # Delete a model
-curl -X DELETE http://localhost:11434/api/delete -d '{"model": "llama3.2-3b-backup"}'
+curl -X DELETE http://localhost:11434/api/delete -d '{"model": "turbo-g023-backup"}'
 
 # List running models
 curl http://localhost:11434/api/ps
@@ -333,7 +350,7 @@ curl http://localhost:11434/api/ps
 - `GET /` - Server status
 - `GET /api/version` - Server version
 - `GET /api/tags` - List available models
-- `GET /api/ps` - List running models
+- `GET /api/ps` - List running models with VRAM usage
 
 #### Model Management
 
@@ -359,7 +376,7 @@ curl http://localhost:11434/api/ps
 ### OpenAI-Compatible API Endpoints
 
 - `GET /v1/models` - List models
-- `POST /v1/chat/completions` - Chat completions
+- `POST /v1/chat/completions` - Chat completions with tool calling
 - `POST /v1/completions` - Text completions
 - `POST /v1/embeddings` - Embeddings
 - `POST /v1/images/generations` - Image generation (stub)
@@ -374,7 +391,7 @@ curl http://localhost:11434/api/ps
 **Request:**
 ```json
 {
-  "model": "llama3.2-3b",
+  "model": "g023/Qwen3-1.77B-g023-GGUF:Q8_0",
   "messages": [
     {"role": "system", "content": "You are helpful."},
     {"role": "user", "content": "Hello!"}
@@ -390,7 +407,7 @@ curl http://localhost:11434/api/ps
 **Response:**
 ```json
 {
-  "model": "llama3.2-3b",
+  "model": "g023/Qwen3-1.77B-g023-GGUF:Q8_0",
   "created_at": "2024-01-01T12:00:00Z",
   "message": {
     "role": "assistant",
@@ -411,14 +428,14 @@ curl http://localhost:11434/api/ps
 **Request:**
 ```json
 {
-  "model": "llama3.2-3b",
+  "model": "g023/Qwen3-1.77B-g023-GGUF:Q8_0",
   "messages": [
     {"role": "system", "content": "You are helpful."},
     {"role": "user", "content": "Hello!"}
   ],
-  "max_tokens": 100,
+  "stream": false,
   "temperature": 0.7,
-  "stream": false
+  "max_tokens": 100
 }
 ```
 
@@ -428,7 +445,7 @@ curl http://localhost:11434/api/ps
   "id": "chatcmpl-123",
   "object": "chat.completion",
   "created": 1677652288,
-  "model": "llama3.2-3b",
+  "model": "g023/Qwen3-1.77B-g023-GGUF:Q8_0",
   "choices": [{
     "index": 0,
     "message": {
@@ -445,273 +462,141 @@ curl http://localhost:11434/api/ps
 }
 ```
 
+#### Embeddings
+
+**Request:**
+```json
+{
+  "model": "Qwen/Qwen3-Embedding-0.6B-GGUF:Q8_0",
+  "input": "The quick brown fox jumps over the lazy dog"
+}
+```
+
+**Response:**
+```json
+{
+  "model": "Qwen/Qwen3-Embedding-0.6B-GGUF:Q8_0",
+  "embeddings": [[0.1, 0.2, ..., 0.9]],
+  "total_duration": 50000000,
+  "load_duration": 10000000,
+  "prompt_eval_count": 9
+}
+```
+
 ## Examples
 
-### Basic Chat
+LMR includes some comprehensive examples in the `examples/` directory:
 
-```python
-import requests
+### Basic Chat (`examples/chat_basic.py`)
+Demonstrates basic chat completion with both Ollama and OpenAI APIs.
 
-# Ollama-style
-response = requests.post("http://localhost:11434/api/chat", json={
-    "model": "llama3.2-3b",
-    "messages": [{"role": "user", "content": "Write a haiku about coding"}],
-    "stream": False
-})
-print(response.json()["message"]["content"])
-```
+### Streaming Chat (`examples/chat_streaming.py`)
+Shows real-time token streaming for chat completions.
 
-### Streaming Chat
+### OpenAI SDK (`examples/openai_sdk.py`)
+Using the official OpenAI Python SDK with LMR.
 
-```python
-import json
+### Model Management (`examples/model_management.py`)
+Creating, copying, and deleting models programmatically.
 
-response = requests.post("http://localhost:11434/api/chat", json={
-    "model": "llama3.2-3b", 
-    "messages": [{"role": "user", "content": "Tell me a story"}],
-    "stream": True
-}, stream=True)
+### Embeddings (`examples/embeddings.py`)
+Generating embeddings with both native and OpenAI endpoints.
 
-for line in response.iter_lines():
-    if line:
-        chunk = json.loads(line.decode())
-        if chunk.get("done"):
-            break
-        content = chunk.get("message", {}).get("content", "")
-        print(content, end="", flush=True)
-```
+### Tool Calling (`examples/tool_calling.py`)
+Function calling with tools, using Hugging Face model auto-download.
 
-### OpenAI SDK Integration
+### Multi-Model (`examples/multi_model.py`)
+Loading and using multiple models simultaneously with VRAM management.
 
-```python
-from openai import OpenAI
-
-client = OpenAI(base_url="http://localhost:11434/v1", api_key="dummy")
-
-# Chat completion
-response = client.chat.completions.create(
-    model="llama3.2-3b",
-    messages=[
-        {"role": "system", "content": "You are a helpful assistant."},
-        {"role": "user", "content": "Explain quantum computing simply."}
-    ],
-    max_tokens=200,
-    temperature=0.7
-)
-
-print(response.choices[0].message.content)
-
-# Streaming
-stream = client.chat.completions.create(
-    model="llama3.2-3b",
-    messages=[{"role": "user", "content": "Count to 10"}],
-    stream=True
-)
-
-for chunk in stream:
-    if chunk.choices[0].delta.content:
-        print(chunk.choices[0].delta.content, end="")
-```
-
-### Model Management
-
-```python
-# Create a specialized model
-requests.post("http://localhost:11434/api/create", json={
-    "model": "coder-assistant",
-    "from": "codellama",
-    "system": "You are an expert coding assistant. Provide clear, efficient code solutions.",
-    "parameters": {
-        "temperature": 0.2,
-        "top_p": 0.9
-    }
-})
-
-# Use the specialized model
-response = requests.post("http://localhost:11434/api/chat", json={
-    "model": "coder-assistant",
-    "messages": [{"role": "user", "content": "Write a Python function to reverse a string"}]
-})
-```
-
-### Function Calling
-
-```python
-# OpenAI-style function calling
-response = client.chat.completions.create(
-    model="llama3.2-3b",
-    messages=[{"role": "user", "content": "What's the weather in Tokyo?"}],
-    functions=[{
-        "name": "get_weather",
-        "description": "Get weather for a location",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "location": {"type": "string"}
-            },
-            "required": ["location"]
-        }
-    }],
-    function_call="auto"
-)
-
-if response.choices[0].message.function_call:
-    print(f"Function: {response.choices[0].message.function_call.name}")
-    print(f"Args: {response.choices[0].message.function_call.arguments}")
-```
-
-## Development
-
-### Project Structure
-
-```
-lmr.py                 # Main server file (~1500 lines)
-models.json           # Model configuration
-test_lmr.py          # Comprehensive test suite
-README.md            # This file
-```
-
-### Running Tests
-
+Run any example with:
 ```bash
-# Run the comprehensive test suite
-python test_lmr.py
-
-# Test specific endpoints
-curl -X POST http://localhost:11434/api/chat \
-  -d '{"model": "test-model", "messages": [{"role": "user", "content": "Hi"}]}'
-```
-
-### Adding New Features
-
-1. **New API Endpoints**: Add FastAPI route handlers in the main file
-2. **Model Configuration**: Extend `ModelConfig` class for new parameters
-3. **Process Management**: Modify `ProcessManager` for new lifecycle features
-4. **Response Translation**: Update format conversion functions
-
-### Code Style
-
-- **Type Hints**: All functions use full type annotations
-- **Async/Await**: Asynchronous request handling throughout
-- **Error Handling**: Comprehensive exception handling with proper HTTP status codes
-- **Logging**: Structured logging with configurable levels
-- **Docstrings**: Comprehensive documentation for all classes and functions
-
-### Debugging
-
-```bash
-# Enable debug logging
-python lmr.py --log-level DEBUG
-
-# Check running processes
-ps aux | grep llama-server
-
-# Monitor GPU usage
-nvidia-smi
-
-# Check server logs
-tail -f /tmp/lmr.log  # If logging to file
+python examples/chat_basic.py
 ```
 
 ## Troubleshooting
 
 ### Common Issues
 
-#### "llama-server binary not found"
-**Solution**: Install llama.cpp and ensure `llama-server` is in PATH, or specify path with `--llama-server`
+**"llama-server binary not found"**
+- Ensure llama.cpp is compiled with `-DLLAMA_BUILD_SERVER=ON`
+- Use `--llama-server /path/to/llama-server` to specify custom path
 
+**"Model not found"**
+- Check `models.json` configuration
+- For HF models, ensure correct format: `hf:owner/repo:quant`
+- Verify model file exists or can be downloaded
+
+**"CUDA out of memory"**
+- Reduce context size with `ctx_size` in model config
+- Enable VRAM management (automatic LRU eviction)
+- Embedding models are automatically capped at 8192 context
+
+**"Failed to start llama-server"**
+- Check stderr output in server logs
+- Verify model file is valid GGUF
+- Ensure sufficient system memory
+
+**Streaming not working**
+- Ensure `import aiohttp` is available (fixed in v0.6.0)
+- Check for null content deltas (fixed in v0.6.0)
+
+### Debugging
+
+Enable debug logging:
 ```bash
-# Check if installed
-which llama-server
-
-# Specify custom path
-python lmr.py --llama-server /path/to/llama-server
-```
-
-#### "Model file not found"
-**Solution**: Verify model path in `models.json` or use Hugging Face integration
-
-```json
-{
-  "my-model": "hf:owner/repo/model.Q4_K_M.gguf"
-}
-```
-
-#### "CUDA out of memory"
-**Solution**: Reduce context size or GPU layers
-
-```json
-{
-  "my-model": {
-    "path": "/path/to/model.gguf",
-    "ctx_size": 2048,
-    "num_gpu": 20
-  }
-}
-```
-
-#### "Connection refused"
-**Solution**: Ensure server is running and accessible
-
-```bash
-# Check if server is running
-curl http://localhost:11434/api/version
-
-# Check port usage
-netstat -tlnp | grep 11434
-```
-
-#### "Model loading slow"
-**Solution**: Check GPU utilization and model size
-
-```bash
-# Monitor loading
 python lmr.py --log-level DEBUG
-
-# Check GPU memory
-nvidia-smi
 ```
+
+Check running processes:
+```bash
+curl http://localhost:11434/api/ps
+```
+
+View server logs for detailed error messages and VRAM management actions.
 
 ### Performance Tuning
 
-1. **GPU Memory**: Ensure sufficient VRAM for model + context
-2. **Context Size**: Balance between capability and memory usage
-3. **Parallel Slots**: Increase for concurrent requests
-4. **Flash Attention**: Enable for supported GPUs
-5. **Model Quantization**: Use Q4_K_M for balance of speed/quality
+- **GPU Memory**: LMR auto-detects GPU memory and optimizes context sizes
+- **Parallel Slots**: Increase `num_parallel` for higher concurrency
+- **Flash Attention**: Enable with `extra_flags: {"--flash-attn": true}`
+- **Context Size**: Balance between memory usage and capability
 
-### Logs and Monitoring
+## Development
+
+### Running Tests
 
 ```bash
-# Server logs show detailed information
-python lmr.py --log-level DEBUG
+# Install pytest
+pip install pytest
 
-# Check running models
-curl http://localhost:11434/api/ps
+# Run all tests
+python -m pytest test_lmr.py -v
 
-# Monitor llama-server processes
-ps aux | grep llama-server
+# Run with coverage
+python -m pytest test_lmr.py --cov=lmr --cov-report=html
 ```
 
-### Compatibility
+All 39 tests should pass, covering API endpoints, model management, and streaming.
 
-- **Python**: 3.8+ required
-- **llama.cpp**: Latest version recommended
-- **GPU**: CUDA 11.0+ or ROCm 5.0+
-- **Models**: GGUF format only
+### Project Structure
+
+The codebase is organized into a clean modular package:
+
+- `lmr/` - Main package
+- `examples/` - Usage examples
+- `test_lmr.py` - Test suite
+
+
+### Version History
+
+- **v0.6.0** - Modular refactor, VRAM management, HF quantization hints, embedding fixes
+- **v0.5.0** - Initial modular architecture
+- **v0.4.0** - OpenAI API compatibility
+- **v0.3.0** - Streaming support
+- **v0.2.0** - Multi-model support
+- **v0.1.0** - Basic Ollama compatibility
 
 ## License
 
-MIT License - see [LICENSE](LICENSE) file for details.
-
-## Acknowledgments
-
-- [llama.cpp](https://github.com/ggerganov/llama.cpp) - The underlying inference engine
-- [Ollama](https://github.com/jmorganca/ollama) - API design inspiration
-- [FastAPI](https://github.com/tiangolo/fastapi) - Web framework
-- [OpenAI](https://platform.openai.com/docs/api-reference) - API specification
-
----
-
-**Local Model Router** - Bringing the power of local LLMs to your applications with familiar APIs.
+MIT License - see [LICENSE](LICENSE) for details.
 
