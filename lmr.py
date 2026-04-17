@@ -42,5 +42,3 @@ from lmr.cli import main
 
 if __name__ == "__main__":
     main()
-def parse_keep_alive(value: Any) -> float:
-    """Parse keep_alive value to seconds. Supports: int (seconds), string like '5m', '1h', '-1' (forever)."""
