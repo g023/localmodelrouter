@@ -4,7 +4,7 @@ import json
 import requests
 
 BASE = "http://localhost:11434"
-MODEL = "qwen3-tiny"
+MODEL = "g023/Qwen3-1.77B-g023-GGUF:Q8_0"
 
 # Non-streaming chat
 resp = requests.post(f"{BASE}/api/chat", json={

@@ -3,7 +3,7 @@
 import requests
 
 BASE = "http://localhost:11434"
-MODEL = "qwen3-tiny"  # Replace with an embedding model for better results
+MODEL = "Qwen/Qwen3-Embedding-0.6B-GGUF:Q8_0"  # embedding model 
 
 # Native /api/embed
 print("=== Native /api/embed ===")

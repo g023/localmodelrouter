@@ -5,7 +5,7 @@ import json
 
 BASE = "http://localhost:11434"
 
-models = ["qwen3-tiny", "qwen3-tiny-v2"]
+models = ["g023/Qwen3-1.77B-g023-GGUF:Q8_0", "qwen3-tiny-v2"]
 
 for model in models:
     print(f"\n=== {model} ===")

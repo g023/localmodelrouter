@@ -4,7 +4,7 @@ import json
 import requests
 
 BASE = "http://localhost:11434"
-MODEL = "qwen3-tiny"
+MODEL = "g023/Qwen3-1.77B-g023-GGUF:Q8_0"
 
 tools = [
     {
@@ -32,6 +32,8 @@ resp = requests.post(f"{BASE}/v1/chat/completions", json={
     "tool_choice": "auto",
     "max_tokens": 200,
 })
+
+print(f"RESPONSE:\n{json.dumps(resp.json(), indent=2)}\n")
 
 data = resp.json()
 msg = data["choices"][0]["message"]
