@@ -276,7 +276,7 @@ class ProcessManager:
         return None
 
     def _download_hf_model(self, hf_ref: str) -> str:
-        """Download a model from HuggingFace. Format: hf:user/repo:filename"""
+        """Download a model from HuggingFace. Format: hf:user/repo:filename or hf:user/repo:QUANT_HINT"""
         try:
             from huggingface_hub import hf_hub_download
         except ImportError:
@@ -287,14 +287,36 @@ class ProcessManager:
         repo_id = parts[0]
         filename = parts[1] if len(parts) > 1 else None
 
-        if not filename:
+        # If filename is missing or looks like a quantization hint (no .gguf extension),
+        # search the repo for matching GGUF files
+        if not filename or not filename.endswith(".gguf"):
             from huggingface_hub import list_repo_files
             files = list_repo_files(repo_id)
             gguf_files = [f for f in files if f.endswith(".gguf")]
             if not gguf_files:
                 raise FileNotFoundError(f"No GGUF files found in {repo_id}")
-            preferred = [f for f in gguf_files if "Q4_K_M" in f or "q4_k_m" in f]
-            filename = preferred[0] if preferred else gguf_files[0]
+
+            if filename:
+                # Treat as quantization hint: find GGUF matching e.g. "Q8_0" or "q4_k_m"
+                hint = filename.upper()
+                matched = [f for f in gguf_files if hint in f.upper()]
+                if matched:
+                    filename = matched[0]
+                else:
+                    raise FileNotFoundError(
+                        f"No GGUF file matching '{filename}' in {repo_id}. "
+                        f"Available: {', '.join(gguf_files)}"
+                    )
+            else:
+                preferred = [f for f in gguf_files if "Q4_K_M" in f or "q4_k_m" in f]
+                filename = preferred[0] if preferred else gguf_files[0]
+
+        # Check if already downloaded
+        local_dir = os.path.join(self.config.models_dir, "hf")
+        local_path = os.path.join(local_dir, filename)
+        if os.path.isfile(local_path):
+            logger.info(f"Using cached HF model: {local_path}")
+            return local_path
 
         logger.info(f"Downloading {repo_id}/{filename} from HuggingFace...")
         cache_dir = os.path.join(self.config.models_dir, "hf_cache")
@@ -303,7 +325,7 @@ class ProcessManager:
             repo_id=repo_id,
             filename=filename,
             cache_dir=cache_dir,
-            local_dir=os.path.join(self.config.models_dir, "hf"),
+            local_dir=local_dir,
         )
         logger.info(f"Downloaded to {local_path}")
         return local_path
