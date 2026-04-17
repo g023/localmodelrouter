@@ -5,8 +5,6 @@ from __future__ import annotations
 import argparse
 import logging
 import os
-import signal
-import sys
 
 import uvicorn
 
@@ -76,13 +74,6 @@ def main():
 
     from lmr.app import create_app
     app, process_manager = create_app(config)
-
-    def signal_handler(sig, frame):
-        logger.info("Received shutdown signal, cleaning up...")
-        sys.exit(0)
-
-    signal.signal(signal.SIGINT, signal_handler)
-    signal.signal(signal.SIGTERM, signal_handler)
 
     uvicorn.run(
         app,
