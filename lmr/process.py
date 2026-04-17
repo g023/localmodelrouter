@@ -351,20 +351,20 @@ class ProcessManager:
         if not ctx and model_cfg and model_cfg.ctx_size:
             ctx = model_cfg.ctx_size
         if not ctx:
-            # Check cache first
-            cached_ctx = self.config._ctx_size_cache.get(model_path)
-            if cached_ctx:
-                ctx = cached_ctx
-            else:
-                ctx = self.config.default_ctx_size
-                if self.config.gpu_memory_mb > 0:
-                    file_size = get_file_size(model_path)
-                    if file_size > 0:
-                        auto_ctx = estimate_context_size(file_size, self.config.gpu_memory_mb)
-                        if auto_ctx > ctx:
-                            ctx = auto_ctx
-                # Cache the result
-                self.config._ctx_size_cache[model_path] = ctx
+            ctx = self.config.default_ctx_size
+            if self.config.gpu_memory_mb > 0:
+                file_size = get_file_size(model_path)
+                if file_size > 0:
+                    # Account for VRAM used by other loaded models
+                    used_vram_mb = sum(
+                        get_file_size(p.model_path) / (1024 * 1024) + (p.ctx_size * 0.1 if p.ctx_size else 0)
+                        for p in self.processes.values()
+                        if p.is_alive
+                    )
+                    available_gpu = max(0, self.config.gpu_memory_mb - used_vram_mb)
+                    auto_ctx = estimate_context_size(file_size, int(available_gpu))
+                    if auto_ctx > ctx:
+                        ctx = auto_ctx
         cmd.extend(["--ctx-size", str(ctx)])
 
         # GPU layers
@@ -414,8 +414,15 @@ class ProcessManager:
         cmd.append("--metrics")
 
         # Embedding mode
-        if any(kw in model_name.lower() for kw in ["embed", "minilm", "bge", "e5", "gte"]):
+        is_embedding = any(kw in model_name.lower() for kw in ["embed", "minilm", "bge", "e5", "gte"])
+        if is_embedding:
             cmd.append("--embedding")
+            # Cap context for embedding models - they don't need huge KV caches
+            for i, arg in enumerate(cmd):
+                if arg == "--ctx-size" and i + 1 < len(cmd):
+                    if int(cmd[i + 1]) > 8192:
+                        cmd[i + 1] = "8192"
+                    break
 
         # mmap/mlock
         if opts.get("use_mmap") is False:
@@ -465,6 +472,40 @@ class ProcessManager:
                     del self.processes[model_name]
 
             model_path = self._resolve_model_path(model_name)
+
+            # VRAM management: evict LRU models if needed to fit the new one
+            if self.config.gpu_memory_mb > 0:
+                new_size_mb = get_file_size(model_path) / (1024 * 1024)
+                if new_size_mb > 0:
+                    def _estimate_vram(proc):
+                        """Estimate total VRAM: model + KV cache overhead."""
+                        model_mb = get_file_size(proc.model_path) / (1024 * 1024)
+                        # KV cache grows with context size; rough estimate
+                        kv_mb = proc.ctx_size * 0.1 if proc.ctx_size else 0
+                        return model_mb + kv_mb
+
+                    current_vram_mb = sum(
+                        _estimate_vram(p)
+                        for p in self.processes.values()
+                        if p.is_alive
+                    )
+                    # Reserve overhead for KV cache, context buffers, etc.
+                    needed_mb = new_size_mb * 1.5 + 512
+                    available_mb = self.config.gpu_memory_mb - current_vram_mb
+
+                    if available_mb < needed_mb:
+                        candidates = sorted(
+                            [(n, p) for n, p in self.processes.items() if p.is_alive],
+                            key=lambda x: x[1].last_used
+                        )
+                        for evict_name, evict_proc in candidates:
+                            if available_mb >= needed_mb:
+                                break
+                            freed_mb = _estimate_vram(evict_proc)
+                            logger.info(f"Evicting model '{evict_name}' to free ~{freed_mb:.0f} MB VRAM")
+                            evict_proc.kill()
+                            del self.processes[evict_name]
+                            available_mb += freed_mb
 
             used_ports = {p.port for p in self.processes.values()}
             port = find_free_port()
